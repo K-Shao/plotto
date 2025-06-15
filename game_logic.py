@@ -164,10 +164,10 @@ class Hand:
             suit_groups[card.suit].append(card)
         return suit_groups
 
-    def greedy_best_hand(self, other, deck):
+    def greedy_best_hand(self, pool):
         if len(self.cards) == 5:
             return self.cards
-        pool = set(self.cards + other.cards + deck.cards)
+        pool = pool.union(set(self.cards))
         rank_groups = self.get_rank_groups(pool)
         suit_groups = self.get_suit_groups(pool)
         # Convert to sets for efficient lookups
@@ -215,12 +215,12 @@ class Hand:
         for t in trips:
             for p in pairs:
                 if t[0].rank != p[0].rank:
-                    t = set(t)
-                    p = set(p)
-                    hand += list((t - played_set)[:3-played_set.union(t)])
-                    hand += list((p - played_set)[:2-played_set.union(p)])
+                    t1 = set(t)
+                    p1 = set(p)
+                    hand += list((t1 - played_set))[:3-len(played_set.intersection(t1))]
+                    hand += list((p1 - played_set))[:2-len(played_set.intersection(p1))]
                     # hand = t[:3] + p[:2]
-                    if played_set.issubset(set(hand)):
+                    if len(hand) == 5 and played_set.issubset(set(hand)):
                         return hand
 
         # 4. Flush
@@ -474,13 +474,15 @@ class GameState:
 
         if len(self.piles[pile_idx].p1_pile) != 5 and len(self.piles[pile_idx].p2_pile) != 5:
             return -2
-        elif len(self.piles[pile_idx].p1_pile) == 5 and len(self.piles[pile_idx].p2_pile) == 5:
-            pass
 
         hand1 = Hand(self.piles[pile_idx].p1_pile)
         hand2 = Hand(self.piles[pile_idx].p2_pile)
-        best_hand1 = Hand(hand1.greedy_best_hand(hand2, self.deck))
-        best_hand2 = Hand(hand2.greedy_best_hand(hand1, self.deck))
+        available_cards = self.deck.cards
+        available_cards += self.p1_hand.cards
+        available_cards += self.p2_hand.cards
+        available_cards = set(available_cards)
+        best_hand1 = Hand(hand1.greedy_best_hand(available_cards))
+        best_hand2 = Hand(hand2.greedy_best_hand(available_cards))
         print('Arbitrate:')
         print(best_hand1)
         print(best_hand2)
