@@ -9,14 +9,14 @@ def arbitrate_game(verdicts):
     for pair_to_win in pairs_to_win:
         if all([verdicts[i] == 1 for i in pair_to_win]):
             is_p1_win = True
-        if all([verdicts[i] == 2 for i in pair_to_win]):
+        if all([verdicts[i] == -1 for i in pair_to_win]):
             is_p2_win = True    
     assert not (is_p1_win and is_p2_win)
     if is_p1_win:
         return 1
     if is_p2_win:
-        return 2
-    return 0
+        return -1
+    return -2
 
 class IllegalPlayError(Exception):
     def __init__(self, message):
@@ -37,7 +37,7 @@ class Hand:
     def idx_of(self, card):
         idx = -1
         for i in range(len(self.cards)):
-            if self.cards[i].equals(card):
+            if self.cards[i] == card:
                 return i
         return idx
     
@@ -69,7 +69,7 @@ class Hand:
             self.hand = "QUADS"
         elif len(self.value_counts.keys()) == 2 and max(self.value_counts.values()) == 3:
             self.hand = "FULL_HOUSE"
-        elif diffs == [1,1,1,1] or diffs == [9,1,1,1]:
+        elif diffs == [1,1,1,1] or diffs == [1,1,1,9]:
             self.hand = "STRAIGHT"
         elif len(self.value_counts.keys()) == 3 and max(self.value_counts.values()) == 3:
             self.hand = "SET"
@@ -320,7 +320,7 @@ class Card:
         self.suit = suit
 
     def __repr__(self):
-        return f'{self.rank}{self.suit}'
+        return utils.rank2str(self.rank) + self.suit
     
     def __eq__(self, other):
         return self.rank == other.rank and self.suit == other.suit
@@ -350,7 +350,7 @@ class Deck:
             for suit in utils.ALL_SUITS:
                 self.cards.append(Card(rank, suit))
 
-        # random.shuffle(self.cards)
+        random.shuffle(self.cards)
 
     def draw(self, card=None):
         if card is None:
@@ -420,24 +420,24 @@ class GameState:
             verdicts.append(verdict)
         game_verdict = arbitrate_game(verdicts)
         if game_verdict > 0:
-            verdict_updates['GAME'] = game_verdict
+            verdict_updates[-1] = game_verdict
             self.over = True
             self.winner = game_verdict
         
         shared_update = {
             'verdict_updates': verdict_updates,
-            'up_card': self.up_card,
+            'up_card': self.up_card.__repr__(),
             'pile_idx': pile_idx,
-            'piles': self.piles[pile_idx].json(),
+            'pile': self.piles[pile_idx].json(),
         }
         self.last_update_p1 = shared_update.copy()
         self.last_update_p2 = shared_update.copy()
         if is_p1:
-            self.last_update_p1['remove_card'] = card
-            self.last_update_p1['add_card'] = drawn_card
+            self.last_update_p1['remove_card'] = card.__repr__()
+            self.last_update_p1['add_card'] = drawn_card.__repr__()
         else:
-            self.last_update_p2['remove_card'] = card
-            self.last_update_p2['add_card'] = drawn_card
+            self.last_update_p2['remove_card'] = card.__repr__()
+            self.last_update_p2['add_card'] = drawn_card.__repr__()
     
     def arbitrate(self, pile_idx):
         """
@@ -498,8 +498,8 @@ class GameState:
             result[f'pile{idx}'] = self.piles[idx].json() 
         return result
       
-    def last_update_p1(self):
+    def get_last_update_p1(self):
         return self.last_update_p1
 
-    def last_update_p2(self):
+    def get_last_update_p2(self):
         return self.last_update_p2

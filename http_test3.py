@@ -7,9 +7,9 @@ import utils
 
 def parse_card(card_string):
     assert len(card_string) == 2
-    assert card_string[0] in utils.ALL_RANKS
+    assert card_string[0] in utils.RANKS_MAP.keys()
     assert card_string[1] in utils.ALL_SUITS
-    return game_logic.Card(card_string[0], card_string[1])
+    return game_logic.Card(utils.RANKS_MAP[card_string[0]], card_string[1])
 
 global next_player_id
 global next_game_id
@@ -51,6 +51,12 @@ def handle_client_request(websocket, req):
     req_json = json.loads(req)
     print(req_json)
 
+    if 'type' not in req_json.keys():
+        return {'type': 'err', 'message': 'Malformed json: missing type'}
+    
+    if req_json['type'] != 'connect' and 'body' not in req_json.keys():
+        return {'type': 'err', 'message': 'Malformed json: missing body'}
+
     if req_json['type'] == 'connect':
         id = get_player_id()
         players.add(id)
@@ -58,6 +64,8 @@ def handle_client_request(websocket, req):
         client_to_id[websocket] = id
         return {'type': 'ack_connect', 'player_id': id}
     elif req_json['type'] == 'new_game':
+        if 'player_id' not in req_json['body'].keys():
+            return {'type': 'err_new_game', 'message': 'insufficient fields'}
         player_id = req_json['body']['player_id']
         if player_id not in players:
             return {'type': 'err_new_game', 'message': 'Failed to create game: user does not exist'}
@@ -69,6 +77,8 @@ def handle_client_request(websocket, req):
             'game_id': game_id,
         }
     elif req_json['type'] == 'join_game':
+        if 'player_id' not in req_json['body'].keys() or 'game_id' not in req_json['body'].keys():
+            return {'type': 'err_join_game', 'message': 'insufficient fields'}
         game_id = req_json['body']['game_id']
         player_id = req_json['body']['player_id']
         if game_id not in games.keys():
@@ -85,7 +95,9 @@ def handle_client_request(websocket, req):
         game_id = req_json['body']['game_id']
         card_string = req_json['body']['card']
         pile_idx = int(req_json['body']['pile'])
-        take_upcard = req_json['body']['take_upcard'].lower() == 'true'
+        take_upcard = req_json['body']['take_upcard']
+        if not all([a in req_json['body'].keys() for a in ['player_id', 'game_id', 'card', 'pile', 'take_upcard']]):
+            return {'type': 'err_action', 'message': 'insufficient fields'}
 
         if game_id not in games.keys():
             return {'type': 'err_action', 'message': 'Game does not exist'}
@@ -128,6 +140,10 @@ async def handle_after_ack(websocket, ack):
             }), 
             ack['game_id']
         )
+        print('sending to p1')
+        print(games[ack['game_id']].game_state.p1_json())
+        print('sending to p2')
+        print(games[ack['game_id']].game_state.p2_json())
         await send_to_game(
             json.dumps({
                 'type': 'send_game_state',
@@ -139,15 +155,16 @@ async def handle_after_ack(websocket, ack):
             }), 
             ack['game_id']
         )
+
     if ack['type'] == 'ack_action':
         await send_to_game(
             json.dumps({
-                'type': 'send_game_state',
-                'update': games[ack['game_id']].game_state.last_update_p1()
+                'type': 'send_game_update',
+                'update': games[ack['game_id']].game_state.get_last_update_p1()
             }), 
             json.dumps({
-                'type': 'send_game_state',
-                'update': games[ack['game_id']].game_state.last_update_p2()
+                'type': 'send_game_update',
+                'update': games[ack['game_id']].game_state.get_last_update_p2()
             }), 
             ack['game_id']
         )
@@ -157,10 +174,13 @@ async def handler(websocket, path):
     try:
         while True:
             message = await websocket.recv()
-            ack =  handle_client_request(websocket, message)
-            print(ack)
-            await websocket.send(json.dumps(ack))
-            await handle_after_ack(websocket, ack)
+            try:
+                ack =  handle_client_request(websocket, message)
+                print(ack)
+                await websocket.send(json.dumps(ack))
+                await handle_after_ack(websocket, ack)
+            except Exception as e:
+                print(e)
     except websockets.exceptions.ConnectionClosed:
         print(f'Client {client_to_id.get(websocket, " that never connected ")} exited')
     finally:
