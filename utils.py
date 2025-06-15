@@ -1,6 +1,4 @@
 ALL_RANKS = [2,3,4,5,6,7,8,9,10,11,12,13,14]
-# ALL_RANKS = ['A', 'K', 'Q', 'J', 'T',]
-
 ALL_SUITS = ['S', 'H', 'D', 'C']
 
 HAND_STRENGTHS = ['STRAIGHT_FLUSH', 'QUADS', 'FULL_HOUSE', 'FLUSH', 'STRAIGHT', 'SET', 'TWO_PAIR', 'ONE_PAIR', 'HIGH_CARD']

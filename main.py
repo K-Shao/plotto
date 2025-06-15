@@ -20,8 +20,8 @@ def parse_card(card_string):
 # notifyGameOver()
 
 games = {}
-global id_next
-id_next = 10000
+global game_id_next
+game_id_next = 10000
 
 class Game:
 
@@ -37,10 +37,10 @@ class Game:
         self.state = 'connected'
 
 def connect_first(player_id):
-    global id_next
-    games[id_next] = Game(player_id)
-    old_id = id_next
-    id_next+=1
+    global game_id_next
+    games[game_id_next] = Game(player_id)
+    old_id = game_id_next
+    game_id_next+=1
     return old_id
 
 def connect_second(id, player_id):

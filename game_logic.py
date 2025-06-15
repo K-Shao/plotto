@@ -94,7 +94,7 @@ class Hand:
         
         if self.hand in {'STRAIGHT_FLUSH', 'FLUSH', 'STRAIGHT', 'HIGH_CARD'}:
             self.primary_card = max(self.value_counts.keys())
-            if self.hand in {'STRAIGHT_FLUSH', 'STRAIGHT'} and high_card == 14:
+            if self.hand in {'STRAIGHT_FLUSH', 'STRAIGHT'} and self.primary_card == 14:
                 self.primary_card = 5 if 13 not in self.value_counts.keys() else 14
         elif self.hand == 'TWO_PAIR':
             self.primary_card = max([card for card in self.value_counts.keys() if self.value_counts[card] == 2])
@@ -286,6 +286,8 @@ class Hand:
         return "Invalid", []
 
 
+    def json(self):
+        return [c.__repr__() for c in self.cards]
         
     
 class Pile:
@@ -303,6 +305,13 @@ class Pile:
 
     def __repr__(self) -> str:
         return f"P1 pile: {self.p1_pile.__repr__()}, P2 pile: {self.p2_pile.__repr__()}, verdict {self.verdict}"
+
+    def json(self):
+        return {
+            'p1': [card.__repr__() for card in self.p1_pile],
+            'p2': [card.__repr__() for card in self.p2_pile],
+            'verdict': self.verdict,
+        }
 
 class Card:
 
@@ -363,8 +372,15 @@ class GameState:
         for i in range(5):
             self.p1_hand.add_card(self.deck.draw())
             self.p2_hand.add_card(self.deck.draw())
+        
+        self.last_update_p1 = None
+        self.last_update_p2 = None
+        self.over = False
+        self.winner = 0
 
     def player_act(self, card, pile_idx:int, take_upcard:bool, is_p1: bool):
+        if self.over:
+            raise IllegalPlayError('Illegal play: game is over')
         if is_p1 != self.is_p1_turn:
             raise IllegalPlayError("Illegal play: not your turn")
         hand = self.p1_hand if is_p1 else self.p2_hand
@@ -383,11 +399,14 @@ class GameState:
                 raise IllegalPlayError('Pile is full')
             self.piles[pile_idx].p2_play(card)
 
+        drawn_card = None
         if take_upcard:
-            hand.add_card(self.up_card)
+            drawn_card = self.up_card
             self.up_card = self.deck.draw()
         else:
-            hand.add_card(self.deck.draw())
+            drawn_card = self.deck.draw()
+            hand.add_card(drawn_card)
+        hand.add_card(drawn_card)
 
         self.is_p1_turn = not self.is_p1_turn
 
@@ -402,7 +421,23 @@ class GameState:
         game_verdict = arbitrate_game(verdicts)
         if game_verdict > 0:
             verdict_updates['GAME'] = game_verdict
-        return verdict_updates
+            self.over = True
+            self.winner = game_verdict
+        
+        shared_update = {
+            'verdict_updates': verdict_updates,
+            'up_card': self.up_card,
+            'pile_idx': pile_idx,
+            'piles': self.piles[pile_idx].json(),
+        }
+        self.last_update_p1 = shared_update.copy()
+        self.last_update_p2 = shared_update.copy()
+        if is_p1:
+            self.last_update_p1['remove_card'] = card
+            self.last_update_p1['add_card'] = drawn_card
+        else:
+            self.last_update_p2['remove_card'] = card
+            self.last_update_p2['add_card'] = drawn_card
     
     def arbitrate(self, pile_idx):
         """
@@ -419,8 +454,8 @@ class GameState:
 
         hand1 = self.piles[pile_idx].p1_pile
         hand2 = self.piles[pile_idx].p2_pile
-        best_hand1 = hands1.greedy_best_hand(hand2, self.deck)
-        best_hand2 = hands2.greedy_best_hand(hand2, self.deck)
+        best_hand1 = hand1.greedy_best_hand(hand2, self.deck)
+        best_hand2 = hand2.greedy_best_hand(hand2, self.deck)
         return best_hand1.compare(best_hand2)
 
     def __repr__(self) -> str:
@@ -440,3 +475,31 @@ class GameState:
             PILE5: {self.piles[4]}
             turn: {1 if self.is_p1_turn else 2}
         """
+    
+    def p1_json(self):
+        result = {
+            'hand': self.p1_hand.json(), 
+            'up_card': self.up_card.__repr__(),
+            'is_my_turn': self.is_p1_turn,
+            'player': 1,
+        }
+        for idx in range(5):
+            result[f'pile{idx}'] = self.piles[idx].json() 
+        return result
+   
+    def p2_json(self):
+        result = {
+            'hand': self.p2_hand.json(), 
+            'up_card': self.up_card.__repr__(),
+            'is_my_turn': not self.is_p1_turn,
+            'player': 2,
+        } 
+        for idx in range(5):
+            result[f'pile{idx}'] = self.piles[idx].json() 
+        return result
+      
+    def last_update_p1(self):
+        return self.last_update_p1
+
+    def last_update_p2(self):
+        return self.last_update_p2
