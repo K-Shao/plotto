@@ -24,8 +24,8 @@ class IllegalPlayError(Exception):
         super().__init__(self.message)
 
 class Hand:
-    def __init__(self):
-        self.cards = []
+    def __init__(self, cards=None):
+        self.cards = [] if not cards else cards
         self.hand = None
 
     def add_card(self, card):
@@ -133,7 +133,7 @@ class Hand:
         returns -1 if self loses
         return 0 if tie
         """
-        if len(self.cards) != 5 and len(self.other) != 5:
+        if len(self.cards) != 5 and len(other.cards) != 5:
             return -2
 
         for func1, func2 in zip([self.eval_int, self.get_primary_card, self.get_secondary_card, self.get_tertiary_card, self.get_quatenary_card, self.get_senary_card],
@@ -165,11 +165,23 @@ class Hand:
         return suit_groups
 
     def greedy_best_hand(self, other, deck):
+        if len(self.cards) == 5:
+            return self.cards
         pool = set(self.cards + other.cards + deck.cards)
         rank_groups = self.get_rank_groups(pool)
         suit_groups = self.get_suit_groups(pool)
         # Convert to sets for efficient lookups
         played_set = set(self.cards)
+        trips = [c for c in rank_groups.values() if len(c) >= 3]
+        trips = sorted(trips, key = lambda x: x[0].rank, reverse=True)
+        pairs = [c for c in rank_groups.values() if len(c) >= 2]
+        pairs = sorted(pairs, key = lambda x: x[0].rank, reverse=True)
+        print('Debug greedy best hand')
+        print(pool)
+        print(rank_groups)
+        print(suit_groups)
+        print(trips)
+        print(pairs)
 
         # 1. Try Royal Flush / Straight Flush
         for suit, suited_cards in suit_groups.items():
@@ -199,15 +211,15 @@ class Hand:
                     return hand
 
         # 3. Full House
-        trips = [c for c in rank_groups.values() if len(c) >= 3]
-        trips = sorted(trips, key = lambda x: x[0].rank, reverse=True)
-        pairs = [c for c in rank_groups.values() if len(c) >= 2]
-        pairs = sorted(pairs, key = lambda x: x[0].rank, reverse=True)
-
+        hand = list(played_set)
         for t in trips:
             for p in pairs:
                 if t[0].rank != p[0].rank:
-                    hand = t[:3] + p[:2]
+                    t = set(t)
+                    p = set(p)
+                    hand += list((t - played_set)[:3-played_set.union(t)])
+                    hand += list((p - played_set)[:2-played_set.union(p)])
+                    # hand = t[:3] + p[:2]
                     if played_set.issubset(set(hand)):
                         return hand
 
@@ -216,7 +228,7 @@ class Hand:
             if len(suited) >= 5:
                 flush_hand = sorted(suited, reverse=True)[:5]
                 if played_set.issubset(set(flush_hand)):
-                    return [Card(r, suit) for r, suit in flush_hand]
+                    return flush_hand
 
         # 5. Straight
         all_ranks = sorted(set(card.rank for card in pool), reverse=True)
@@ -256,8 +268,6 @@ class Hand:
                     return hand
 
         # 7. Two Pair
-        pairs = [g for g in rank_groups.values() if len(g) >= 2]
-        pairs = sorted(pairs, key = lambda x: x[0].rank, reverse=True)
         if len(pairs) >= 2:
             p1, p2 = pairs[:2]
             hand = p1[:2] + p2[:2]
@@ -270,18 +280,29 @@ class Hand:
 
         # 8. One Pair
         if len(pairs) >= 1:
-            hand = list(played_set)
+            print('debug')
+            print(pairs[0])
+            print(played_set)
+
+            for pair in pairs:
+                if len(played_set.union(set(pair[:2]))) <= 5:
+                    hand = played_set.union(set(pair[:2]))
+                    break
+            else:
+                hand = played_set
+            print(hand)
+            hand = list(hand)
             kickers = sorted([c for c in pool if c.rank != group[0].rank and c not in hand], reverse=True)[:5-len(hand)]
             hand += kickers
             if played_set.issubset(set(hand)):
                 return hand
 
         # 9. High Card
-        hand = played_set
+        hand = list(played_set)
         rest = sorted([c for c in pool if c not in hand], reverse=True)[:5-len(hand)]
         hand += rest
         if played_set.issubset(set(hand)):
-            return [Card(r, suit) for r, suit in hand]
+            return hand
 
         return "Invalid", []
 
@@ -354,7 +375,10 @@ class Deck:
 
     def draw(self, card=None):
         if card is None:
-            return self.cards.pop(0)
+            if len(self.cards) > 0:
+                return self.cards.pop(0)
+            else:
+                return None
         return self.cards.remove(card)
 
 class GameState:
@@ -405,7 +429,8 @@ class GameState:
             self.up_card = self.deck.draw()
         else:
             drawn_card = self.deck.draw()
-            hand.add_card(drawn_card)
+            if drawn_card is None:
+                raise IllegalPlayError('Tried to draw from empty pile')
         hand.add_card(drawn_card)
 
         self.is_p1_turn = not self.is_p1_turn
@@ -452,11 +477,15 @@ class GameState:
         elif len(self.piles[pile_idx].p1_pile) == 5 and len(self.piles[pile_idx].p2_pile) == 5:
             pass
 
-        hand1 = self.piles[pile_idx].p1_pile
-        hand2 = self.piles[pile_idx].p2_pile
-        best_hand1 = hand1.greedy_best_hand(hand2, self.deck)
-        best_hand2 = hand2.greedy_best_hand(hand2, self.deck)
-        return best_hand1.compare(best_hand2)
+        hand1 = Hand(self.piles[pile_idx].p1_pile)
+        hand2 = Hand(self.piles[pile_idx].p2_pile)
+        best_hand1 = Hand(hand1.greedy_best_hand(hand2, self.deck))
+        best_hand2 = Hand(hand2.greedy_best_hand(hand1, self.deck))
+        print('Arbitrate:')
+        print(best_hand1)
+        print(best_hand2)
+        result = best_hand1.compare(best_hand2)
+        return result if (result == 1 and len(hand1.cards) == 5) or (result == -1 and len(hand2.cards)==5) else -2
 
     def __repr__(self) -> str:
         return f"""

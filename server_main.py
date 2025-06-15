@@ -83,6 +83,8 @@ def handle_client_request(websocket, req):
         player_id = req_json['body']['player_id']
         if game_id not in games.keys():
             return {'type': 'err_join_game', 'message': 'Failed to join game: game does not exist'}
+        if games[game_id].state != 'created':
+            return {'type': 'err_join_game', 'message': 'Failed to join game: game is already started'}
         else:
             games[game_id].connect(player_id)
             return {
@@ -174,13 +176,13 @@ async def handler(websocket, path):
     try:
         while True:
             message = await websocket.recv()
-            try:
-                ack =  handle_client_request(websocket, message)
-                print(ack)
-                await websocket.send(json.dumps(ack))
-                await handle_after_ack(websocket, ack)
-            except Exception as e:
-                print(e)
+            # try:
+            ack =  handle_client_request(websocket, message)
+            print(ack)
+            await websocket.send(json.dumps(ack))
+            await handle_after_ack(websocket, ack)
+            # except Exception as e:
+            #     print(e)
     except websockets.exceptions.ConnectionClosed:
         print(f'Client {client_to_id.get(websocket, " that never connected ")} exited')
     finally:
